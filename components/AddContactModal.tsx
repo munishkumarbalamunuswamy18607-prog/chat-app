@@ -9,11 +9,14 @@ interface Props {
 
 export default function AddContactModal({ onClose, onAdded }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<{ username: string; display_name: string }[]>([]);
+  const [results, setResults] = useState<{ id: string; username: string; display_name: string }[]>([]);
   const [timer, setTimer] = useState<ReturnType<typeof setTimeout>>();
+  const [adding, setAdding] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
   function handleChange(val: string) {
     setQuery(val);
+    setErrorMsg("");
     if (timer) clearTimeout(timer);
     const t = setTimeout(() => doSearch(val), 300);
     setTimer(t);
@@ -29,24 +32,18 @@ export default function AddContactModal({ onClose, onAdded }: Props) {
   }
 
   async function addContact(username: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    setAdding(username);
+    setErrorMsg("");
+    const { error } = await supabase.rpc("add_contact", { target_username: username });
+    setAdding(null);
 
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("id")
-      .eq("username", username)
-      .single();
-
-    if (userRow) {
-      await supabase.from("contacts").insert({
-        user_id: user.id,
-        contact_id: userRow.id,
-        status: "accepted",
-      });
-      onAdded();
-      onClose();
+    if (error) {
+      setErrorMsg(error.message);
+      return;
     }
+
+    onAdded();
+    onClose();
   }
 
   return (
@@ -61,12 +58,14 @@ export default function AddContactModal({ onClose, onAdded }: Props) {
           autoFocus
           className="w-full border rounded-lg px-4 py-2 mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
         />
+        {errorMsg && <p className="text-red-500 text-xs mb-2">{errorMsg}</p>}
         <div className="max-h-60 overflow-y-auto">
           {results.map((r) => (
             <button
               key={r.username}
+              disabled={adding === r.username}
               onClick={() => addContact(r.username)}
-              className="w-full flex items-center px-3 py-2 hover:bg-gray-100 rounded-lg"
+              className="w-full flex items-center px-3 py-2 hover:bg-gray-100 rounded-lg disabled:opacity-50"
             >
               <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">
                 {r.display_name[0]?.toUpperCase()}
@@ -75,6 +74,7 @@ export default function AddContactModal({ onClose, onAdded }: Props) {
                 <p className="font-medium text-sm">{r.display_name}</p>
                 <p className="text-xs text-gray-500">@{r.username}</p>
               </div>
+              {adding === r.username && <span className="ml-auto text-xs text-gray-400">Adding…</span>}
             </button>
           ))}
           {query.length >= 2 && results.length === 0 && (

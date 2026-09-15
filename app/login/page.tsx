@@ -27,20 +27,44 @@ export default function LoginPage() {
         });
         if (error) throw error;
 
-        if (data.user) {
-          const tencentUserId = `u_${username.replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 32);
-          await supabase.from("users").insert({
-            id: data.user.id,
-            username,
-            display_name: displayName,
-            email,
-            tencent_user_id: tencentUserId,
-          });
-        }
+       if (data.user) {
+  const tencentUserId = `u_${username.replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 32);
+  const { error: profileError } = await supabase.from("users").insert({
+    id: data.user.id,
+    username,
+    display_name: displayName,
+    email,
+    tencent_user_id: tencentUserId,  });
+  if (profileError) {
+    console.error("Profile insert failed:", profileError);
+    throw profileError;
+  }
+}
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
+  const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+
+  // Self-heal: if signup's insert failed earlier (e.g. because email
+  // confirmation was pending at the time), create the profile row now —
+  // we definitely have a real session at this point.
+  if (signInData.user) {
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", signInData.user.id)
+      .maybeSingle();
+
+    if (!existing) {
+      await supabase.from("users").insert({
+        id: signInData.user.id,
+        username: signInData.user.user_metadata.username,
+        display_name: signInData.user.user_metadata.display_name,
+        email: signInData.user.email,
+        tencent_user_id: `u_${signInData.user.user_metadata.username?.replace(/[^a-zA-Z0-9_-]/g, "")}`.slice(0, 32),
+      });
+    }
+  }
+}
       router.push("/chat");
     } catch (err: any) {
       setError(err.message);

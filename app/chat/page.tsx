@@ -27,25 +27,14 @@ export default function ContactsPage() {
   }, []);
 
   async function loadContacts() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data, error } = await supabase.rpc("list_contacts");
 
-    const { data } = await supabase
-      .from("contacts")
-      .select("contact_id, users!contacts_contact_id_fkey(username, display_name)")
-      .eq("user_id", user.id);
-
-    if (data) {
-      setContacts(
-        data
-          .map((row: any) => ({
-            id: row.contact_id,
-            username: row.users?.username || "",
-            display_name: row.users?.display_name || "Unknown",
-          }))
-          .filter((c: Contact) => c.display_name !== "Unknown")
-      );
+    if (error) {
+      console.error("Load contacts failed:", error);
+      return;
     }
+
+    setContacts(data || []);
   }
 
   return (
